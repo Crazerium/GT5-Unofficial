@@ -17,6 +17,7 @@ import static gregtech.api.util.GTStructureUtility.buildHatchAdder;
 import static gregtech.api.util.GTStructureUtility.chainAllGlasses;
 import static gregtech.api.util.GTStructureUtility.ofFrame;
 import static gregtech.api.util.GTStructureUtility.ofSheetMetal;
+import static gregtech.api.util.GTUtility.validMTEList;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -60,6 +61,9 @@ import gregtech.api.interfaces.tileentity.IGregTechDeviceInformation;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.logic.ProcessingLogic;
 import gregtech.api.metatileentity.implementations.MTEExtendedPowerMultiBlockBase;
+import gregtech.api.metatileentity.implementations.MTEHatchInput;
+import gregtech.api.metatileentity.implementations.MTEHatchInputDebug;
+import gregtech.api.metatileentity.implementations.MTEHatchMultiInput;
 import gregtech.api.modularui2.GTGuiTextures;
 import gregtech.api.objects.XSTR;
 import gregtech.api.recipe.RecipeMaps;
@@ -72,6 +76,8 @@ import gregtech.api.util.GTUtility;
 import gregtech.api.util.MultiblockTooltipBuilder;
 import gregtech.common.gui.modularui.multiblock.base.MTEMultiBlockBaseGui;
 import gregtech.common.misc.GTStructureChannels;
+import gregtech.common.tileentities.machines.MTEHatchInputME;
+import gregtech.common.tileentities.machines.MTEHatchInputMELong;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import mcp.mobius.waila.api.IWailaConfigHandler;
 import mcp.mobius.waila.api.IWailaDataAccessor;
@@ -157,8 +163,6 @@ public class MTEIntegratedOreFactory extends MTEExtendedPowerMultiBlockBase<MTEI
     private boolean doesVoidStone = false;
     private final XSTR random = new XSTR();
 
-    // setting alwaysMaxParallel to true here combined with supportsPowerPanel() returning false
-    // will result in WAILA never using the overridden parallels format
     public MTEIntegratedOreFactory(int aID, String aName, String aNameRegional) {
         super(aID, aName, aNameRegional);
         this.alwaysMaxParallel = true;
@@ -252,14 +256,8 @@ public class MTEIntegratedOreFactory extends MTEExtendedPowerMultiBlockBase<MTEI
         }
         final int maxParallelFromPower = GTUtility.safeInt(getMaxInputEu() / RECIPE_EUT);
 
-        long lubricantAmount = 0L;
-        long waterAmount = 0L;
-
-        for (FluidStack fluid : inputFluid) {
-            if (fluid == null) continue;
-            if (fluid.equals(GTModHandler.getDistilledWater(1L))) waterAmount += fluid.amount;
-            else if (fluid.equals(Materials.Lubricant.getFluid(1L))) lubricantAmount += fluid.amount;
-        }
+        long lubricantAmount = getFluidAmount(Materials.Lubricant.getFluid(1L));
+        long waterAmount = getFluidAmount(GTModHandler.getDistilledWater(1L));
 
         final long parallelFromFluids = Math.min(lubricantAmount / 2, waterAmount / 200);
         if (parallelFromFluids <= 0) {
@@ -273,13 +271,15 @@ public class MTEIntegratedOreFactory extends MTEExtendedPowerMultiBlockBase<MTEI
             parallelFromItems += ore.stackSize;
         }
 
-        final int baseParallel = GTUtility
+        final int availableParallel = GTUtility
             .safeInt(Math.min(Math.min((long) maxParallelFromPower, parallelFromFluids), parallelFromItems));
-        if (baseParallel <= 0) {
+        if (availableParallel <= 0) {
             return CheckRecipeResultRegistry.NO_RECIPE;
         }
 
-        final int effectiveParallel = GTUtility.safeInt(baseParallel);
+        maxParallel = availableParallel;
+        final int effectiveParallel = alwaysMaxParallel ? availableParallel
+            : Math.min(availableParallel, Math.max(1, powerPanelMaxParallel));
         if (effectiveParallel <= 0) {
             return CheckRecipeResultRegistry.NO_RECIPE;
         }
@@ -318,7 +318,7 @@ public class MTEIntegratedOreFactory extends MTEExtendedPowerMultiBlockBase<MTEI
             totalLubricantToDrain -= tryDrain;
         }
 
-        final long fixedEUt = -RECIPE_EUT * baseParallel;
+        final long fixedEUt = -RECIPE_EUT * effectiveParallel;
 
         List<ItemStack> tOres = new ArrayList<>();
         int remaining = effectiveParallel;
@@ -392,7 +392,7 @@ public class MTEIntegratedOreFactory extends MTEExtendedPowerMultiBlockBase<MTEI
         this.lEUt = fixedEUt;
 
         lastParallel = effectiveParallel;
-        maxParallel = effectiveParallel;
+        maxParallel = availableParallel;
 
         this.updateSlots();
         return CheckRecipeResultRegistry.SUCCESSFUL;
@@ -565,11 +565,38 @@ public class MTEIntegratedOreFactory extends MTEExtendedPowerMultiBlockBase<MTEI
 
     private long getFluidAmount(FluidStack aFluid) {
         if (aFluid == null) return 0L;
+
         long total = 0L;
-        for (FluidStack fluid : getStoredFluids()) {
-            if (aFluid.isFluidEqual(fluid)) total += fluid.amount;
+        long meAmount = 0L;
+        for (MTEHatchInput hatch : validMTEList(mInputHatches)) {
+            setHatchRecipeMap(hatch);
+            switch (hatch) {
+                case MTEHatchInputMELong longME ->
+                    meAmount = Math.max(meAmount, longME.getLongStoredFluidAmount(aFluid));
+                case MTEHatchInputME meHatch -> {
+                    for (FluidStack fluid : meHatch.getStoredFluids()) {
+                        if (fluid != null && aFluid.isFluidEqual(fluid)) {
+                            meAmount = Math.max(meAmount, fluid.amount);
+                        }
+                    }
+                }
+                case MTEHatchMultiInput multiInputHatch -> {
+                    for (FluidStack fluid : multiInputHatch.getStoredFluid()) {
+                        if (fluid != null && aFluid.isFluidEqual(fluid)) total += fluid.amount;
+                    }
+                }
+                case MTEHatchInputDebug debugHatch -> {
+                    for (FluidStack fluid : debugHatch.getFluidList()) {
+                        if (fluid != null && aFluid.isFluidEqual(fluid)) total += Integer.MAX_VALUE;
+                    }
+                }
+                default -> {
+                    FluidStack fluid = hatch.getFillableStack();
+                    if (fluid != null && aFluid.isFluidEqual(fluid)) total += fluid.amount;
+                }
+            }
         }
-        return total;
+        return total + meAmount;
     }
 
     private List<ItemStack> getOutputStack(GTRecipe aRecipe, int aTime) {
@@ -579,41 +606,47 @@ public class MTEIntegratedOreFactory extends MTEExtendedPowerMultiBlockBase<MTEI
             if (template == null) continue;
 
             int chance = aRecipe.getOutputChance(i);
-            int quantity;
+            long quantity;
             if (chance == 10000) {
-                quantity = aTime * template.stackSize;
+                quantity = (long) aTime * template.stackSize;
             } else {
-                // Normal-distribution approximation for probabilistic drops
                 double p = chance / 10000.0;
                 double mean = aTime * p;
                 double std = Math.sqrt(aTime * p * (1 - p));
-                quantity = (int) Math.ceil(std * random.nextGaussian() + mean);
-                quantity *= template.stackSize;
+                long successfulRolls = (long) Math.ceil(std * random.nextGaussian() + mean);
+                quantity = successfulRolls * template.stackSize;
             }
-            if (quantity > 0) {
-                outputs.add(GTUtility.copyAmountUnsafe(quantity, template));
-            }
+            addSplitStacks(outputs, template, quantity);
         }
         return outputs;
     }
 
+    private static void addSplitStacks(List<ItemStack> output, ItemStack template, long amount) {
+        long remaining = amount;
+        while (remaining > 0L) {
+            int chunk = (int) Math.min(remaining, Integer.MAX_VALUE);
+            output.add(GTUtility.copyAmountUnsafe(chunk, template));
+            remaining -= chunk;
+        }
+    }
+
     private void doCompress(List<ItemStack> aList) {
-        HashMap<Integer, Integer> merged = new HashMap<>();
+        HashMap<Integer, Long> merged = new HashMap<>();
         for (ItemStack stack : aList) {
             if (doesVoidStone && VOIDABLE_STONE_DUSTS.stream()
                 .anyMatch(dust -> GTUtility.areStacksEqual(dust, stack))) continue;
             int id = GTUtility.stackToInt(stack);
             if (id != 0) {
-                merged.merge(id, stack.stackSize, Integer::sum);
+                merged.merge(id, (long) stack.stackSize, Long::sum);
             }
         }
 
-        midProduct = new ItemStack[merged.size()];
-        int index = 0;
-        for (Map.Entry<Integer, Integer> entry : merged.entrySet()) {
+        List<ItemStack> compressed = new ArrayList<>();
+        for (Map.Entry<Integer, Long> entry : merged.entrySet()) {
             ItemStack template = GTUtility.intToStack(entry.getKey());
-            midProduct[index++] = GTUtility.copyAmountUnsafe(entry.getValue(), template);
+            if (template != null) addSplitStacks(compressed, template, entry.getValue());
         }
+        midProduct = compressed.toArray(new ItemStack[0]);
     }
 
     // needed for MTEMultiBlockBase WAILA parallel tag to work
@@ -622,10 +655,9 @@ public class MTEIntegratedOreFactory extends MTEExtendedPowerMultiBlockBase<MTEI
         return maxParallel;
     }
 
-    // Parallels are automatical
     @Override
     public boolean supportsPowerPanel() {
-        return false;
+        return true;
     }
 
     @Override

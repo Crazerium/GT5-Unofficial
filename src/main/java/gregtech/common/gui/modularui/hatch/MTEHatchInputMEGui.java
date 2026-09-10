@@ -19,16 +19,21 @@ import com.cleanroommc.modularui.api.IPanelHandler;
 import com.cleanroommc.modularui.api.drawable.IKey;
 import com.cleanroommc.modularui.api.widget.Interactable;
 import com.cleanroommc.modularui.drawable.DynamicDrawable;
+import com.cleanroommc.modularui.drawable.GuiDraw;
 import com.cleanroommc.modularui.drawable.GuiTextures;
 import com.cleanroommc.modularui.screen.ModularPanel;
 import com.cleanroommc.modularui.screen.RichTooltip;
+import com.cleanroommc.modularui.screen.viewport.ModularGuiContext;
+import com.cleanroommc.modularui.theme.WidgetThemeEntry;
 import com.cleanroommc.modularui.utils.Alignment;
 import com.cleanroommc.modularui.utils.MouseData;
+import com.cleanroommc.modularui.utils.NumberFormat;
 import com.cleanroommc.modularui.utils.fluid.FluidInteractions;
 import com.cleanroommc.modularui.value.sync.BooleanSyncValue;
 import com.cleanroommc.modularui.value.sync.FluidSlotSyncHandler;
 import com.cleanroommc.modularui.value.sync.GenericListSyncHandler;
 import com.cleanroommc.modularui.value.sync.IntSyncValue;
+import com.cleanroommc.modularui.value.sync.LongSyncValue;
 import com.cleanroommc.modularui.value.sync.PanelSyncManager;
 import com.cleanroommc.modularui.widget.ParentWidget;
 import com.cleanroommc.modularui.widgets.TextWidget;
@@ -48,6 +53,7 @@ import gregtech.common.gui.modularui.adapter.MTEHatchInputMESlotAdapter;
 import gregtech.common.gui.modularui.hatch.base.MTEHatchBaseGui;
 import gregtech.common.tileentities.machines.MTEHatchInputME;
 import gregtech.common.tileentities.machines.MTEHatchInputME.Slot;
+import gregtech.common.tileentities.machines.MTEHatchInputMELong;
 
 public class MTEHatchInputMEGui extends MTEHatchBaseGui<MTEHatchInputME> {
 
@@ -245,37 +251,72 @@ public class MTEHatchInputMEGui extends MTEHatchBaseGui<MTEHatchInputME> {
         syncManager.registerSlotGroup(STOCK_INV_NAME, STOCK_SLOT_ROW);
 
         return new Grid().coverChildren()
-            .gridOfWidthHeight(STOCK_SLOT_PER_ROW, STOCK_SLOT_ROW, ($x, $y, index) -> new FluidSlot() {
-
-                @Override
-                protected void addToolTip(RichTooltip tooltip) {
-                    FluidStack fluid = getFluidStack();
-
-                    if (fluid != null) {
-                        tooltip.addFromFluid(fluid);
-                        tooltip.addLine(
-                            IKey.lang(
-                                "modularui2.fluid.phantom.amount",
-                                this.formatFluidTooltipAmount(fluid.amount),
-                                this.getBaseUnit()));
-                        addAdditionalFluidInfo(tooltip, fluid);
-
-                        if (!Interactable.hasShiftDown()) {
-                            tooltip.addLine(IKey.lang("modularui2.tooltip.shift"));
-                        }
-                    } else {
-                        tooltip.addLine(IKey.lang("modularui2.fluid.empty"));
-                    }
+            .gridOfWidthHeight(STOCK_SLOT_PER_ROW, STOCK_SLOT_ROW, ($x, $y, index) -> {
+                LongSyncValue longAmountSyncer = null;
+                if (machine instanceof MTEHatchInputMELong longHatch) {
+                    longAmountSyncer = new LongSyncValue(() -> longHatch.getLongDisplayAmount(index));
+                    syncManager.syncValue("longFluidAmount_" + index, longAmountSyncer);
                 }
-            }.syncHandler(new FluidSlotSyncHandler(new ExtractedFluidTank(index)) {
+                LongSyncValue finalLongAmountSyncer = longAmountSyncer;
 
-                @Override
-                protected void tryClickPhantom(MouseData mouseData, ItemStack cursorStack) {}
+                return new FluidSlot() {
 
-                @Override
-                public void tryScrollPhantom(MouseData mouseData) {}
-            }.phantom(true))
-                .backgroundOverlay(GTGuiTextures.SLOT_ITEM_DARK));
+                    @Override
+                    protected void addToolTip(RichTooltip tooltip) {
+                        FluidStack fluid = getFluidStack();
+
+                        if (fluid != null) {
+                            tooltip.addFromFluid(fluid);
+                            long displayAmount = finalLongAmountSyncer == null ? fluid.amount
+                                : Math.max(0L, finalLongAmountSyncer.getLongValue());
+                            tooltip.addLine(
+                                IKey.lang(
+                                    "modularui2.fluid.phantom.amount",
+                                    this.formatFluidTooltipAmount(displayAmount),
+                                    this.getBaseUnit()));
+                            addAdditionalFluidInfo(tooltip, fluid);
+
+                            if (!Interactable.hasShiftDown()) {
+                                tooltip.addLine(IKey.lang("modularui2.tooltip.shift"));
+                            }
+                        } else {
+                            tooltip.addLine(IKey.lang("modularui2.fluid.empty"));
+                        }
+                    }
+
+                    @Override
+                    protected boolean displayAmountText() {
+                        return finalLongAmountSyncer == null && super.displayAmountText();
+                    }
+
+                    @Override
+                    public void drawOverlay(ModularGuiContext context, WidgetThemeEntry<?> widgetTheme) {
+                        super.drawOverlay(context, widgetTheme);
+                        if (finalLongAmountSyncer == null || getFluidStack() == null) return;
+
+                        long displayAmount = Math.max(0L, finalLongAmountSyncer.getLongValue());
+                        String text = NumberFormat
+                            .format(this.getBaseUnitAmount(displayAmount), NumberFormat.AMOUNT_TEXT)
+                            + this.getBaseUnit();
+                        int left = getContentPadding().getLeft();
+                        GuiDraw.drawScaledAlignedTextInBox(
+                            text,
+                            left,
+                            0,
+                            getArea().w() - left,
+                            getArea().h(),
+                            Alignment.BottomRight);
+                    }
+                }.syncHandler(new FluidSlotSyncHandler(new ExtractedFluidTank(index)) {
+
+                    @Override
+                    protected void tryClickPhantom(MouseData mouseData, ItemStack cursorStack) {}
+
+                    @Override
+                    public void tryScrollPhantom(MouseData mouseData) {}
+                }.phantom(true))
+                    .backgroundOverlay(GTGuiTextures.SLOT_ITEM_DARK);
+            });
     }
 
     @Override

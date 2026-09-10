@@ -928,6 +928,24 @@ public class AssemblyLineRecipes implements Runnable {
             .eut(TierEU.RECIPE_UEV)
             .addTo(AssemblyLine);
 
+        // Long Stocking Input Hatch (ME)
+        GTValues.RA.stdBuilder()
+            .metadata(RESEARCH_ITEM, ItemList.Hatch_Input_ME.get(1))
+            .metadata(SCANNING, new Scanning(2 * MINUTES, TierEU.RECIPE_UEV))
+            .itemInputs(
+                ItemList.Hatch_Input_ME.get(1),
+                ItemList.FluidRegulator_UEV.get(16),
+                ItemList.Sensor_UEV.get(4),
+                ItemList.Emitter_UEV.get(4),
+                new Object[] { OrePrefixes.circuit.get(Materials.UEV), 8 },
+                GTOreDictUnificator.get(OrePrefixes.wireGt01, Materials.SuperconductorUEV, 8),
+                GTOreDictUnificator.get(OrePrefixes.plate, Materials.Neutronium, 8))
+            .fluidInputs(MaterialMisc.MUTATED_LIVING_SOLDER.getFluidStack(9_216), Materials.UUMatter.getFluid(8_000))
+            .itemOutputs(ItemList.Hatch_Input_ME_Long.get(1))
+            .duration(2 * MINUTES)
+            .eut(TierEU.RECIPE_UIV)
+            .addTo(AssemblyLine);
+
         // Endothermic Fridge
         GTValues.RA.stdBuilder()
             .metadata(RESEARCH_ITEM, ItemList.Machine_Multi_VacuumFreezer.get(1))

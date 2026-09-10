@@ -111,6 +111,7 @@ import gregtech.common.tileentities.machines.MTEHatchCraftingInputME;
 import gregtech.common.tileentities.machines.MTEHatchCraftingInputSlave;
 import gregtech.common.tileentities.machines.MTEHatchInputBusME;
 import gregtech.common.tileentities.machines.MTEHatchInputME;
+import gregtech.common.tileentities.machines.MTEHatchInputMELong;
 import gregtech.common.tileentities.machines.MTEHatchPatternProvider;
 import gregtech.common.tileentities.machines.MTEHeatSensor;
 import gregtech.common.tileentities.machines.basic.MTEAdvSeismicProspector;
@@ -8344,6 +8345,9 @@ public class LoaderMetaTileEntities implements Runnable { // TODO CHECK CIRCUIT 
                 true,
                 "hatch.input.me",
                 "Advanced Stocking Input Hatch (ME)").getStackForm(1L));
+        ItemList.Hatch_Input_ME_Long.set(
+            new MTEHatchInputMELong(INPUT_HATCH_ME_LONG.ID, "hatch.input.me.long", "Long Stocking Input Hatch (ME)")
+                .getStackForm(1L));
         ItemList.Hatch_Output_ME
             .set(new MTEHatchOutputME(OUTPUT_HATCH_ME.ID, "hatch.output.me", "Output Hatch (ME)").getStackForm(1L));
         API.setAliases(ItemList.Hatch_Output_ME.get(1L), "gt.alias.debug");
